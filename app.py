@@ -34,9 +34,8 @@ st.markdown("""
     .quiz-container { background-color: #f1f8e9; padding: 25px; border-radius: 20px; border: 1px solid #c5e1a5; margin-top: 20px; }
     .stProgress > div > div > div > div { background-color: var(--flexi-orange); }
     img { border-radius: 15px; margin: 15px 0; border: 1px solid #ddd; }
-    </style>
-    """, unsafe_allow_html=True)
-@media print {
+
+    @media print {
     /* إخفاء القائمة الجانبية، الأزرار، وعناصر التحكم عند الطباعة */
     section[data-testid="stSidebar"], 
     .stButton, 
@@ -58,6 +57,9 @@ st.markdown("""
         box-shadow: none !important;
     }
 }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- 3. Session State ---
 if 'lesson_data' not in st.session_state: st.session_state.lesson_data = None
 if 'score' not in st.session_state: st.session_state.score = 0
@@ -241,3 +243,4 @@ if st.session_state.lesson_data:
                         <p style="font-size:20px; color:#1e3a8a;">Congratulations! You have mastered this topic with a 100% score!</p>
                     </div>
                 """, unsafe_allow_html=True)
+
