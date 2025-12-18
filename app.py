@@ -32,7 +32,7 @@ if 'quiz_data' not in st.session_state: st.session_state.quiz_data = []
 if 'user_scores' not in st.session_state: st.session_state.user_scores = {}
 if 'total_points' not in st.session_state: st.session_state.total_points = 0
 
-# --- 4. Sidebar (Full Profile) ---
+# --- 4. Sidebar ---
 with st.sidebar:
     st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=200)
     st.header("👤 Student Profile")
@@ -54,18 +54,30 @@ with st.sidebar:
         <button onclick="window.print()" style="width:100%; background:#f97316; color:white; border:none; padding:10px; font-weight:bold; border-radius:8px; cursor:pointer;">🖨️ Print Lesson (PDF)</button>
     """, height=50)
 
-# --- 5. Main Logic with Error Handling ---
+# --- 5. Logic with Dynamic Model Selection ---
 st.title("🎓 Flexi Academy AI Tutor")
-topic = st.text_area("What would you like to learn?", placeholder="e.g., The Solar System")
+topic = st.text_area("What would you like to learn?", placeholder="e.g., Quantum Physics simplified")
 
 if st.button("Generate Experience 🚀"):
     if not topic:
         st.error("Please enter a topic!")
     else:
         try:
-            # Correct Model Path to avoid 404
-            model = genai.GenerativeModel("models/gemini-1.5-flash")
+            # FIX: Trying multiple model naming conventions to avoid 404
+            model = None
+            for model_name in ["gemini-1.5-flash", "models/gemini-1.5-flash", "gemini-pro"]:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    # Test a small generation to verify model existence
+                    model.generate_content("test", generation_config={"max_output_tokens": 1})
+                    break 
+                except:
+                    continue
             
+            if not model:
+                st.error("Could not connect to any Gemini models. Please check your API key.")
+                st.stop()
+
             prompt = f"""
             Role: Expert Tutor at Flexi Academy. Student: {name}, {gender}, {age} years old.
             Language: {lang}. Style: {style}. Path: {path}. Topic: {topic}. Level: {level}.
@@ -76,9 +88,7 @@ if st.button("Generate Experience 🚀"):
                Q: [Question] | A: [Opt1] | B: [Opt2] | C: [Opt3] | Correct: [Letter] | Expl: [Why]
             """
             
-            response_text = ""
             success = False
-            
             with st.spinner('Flexi is building your lesson...'):
                 for attempt in range(3):
                     try:
@@ -88,71 +98,56 @@ if st.button("Generate Experience 🚀"):
                         break
                     except exceptions.ResourceExhausted:
                         time.sleep((attempt + 1) * 5)
-                    except Exception as e:
-                        st.error(f"Generation error: {e}")
-                        break
                 
                 if success:
-                    # Parse Content & Quiz
                     main_txt, quiz_txt = response_text.split('START_QUIZ') if 'START_QUIZ' in response_text else (response_text, "")
                     st.session_state.lesson_content = main_txt
                     st.session_state.quiz_data = re.findall(r"Q:(.*?) \| A:(.*?) \| B:(.*?) \| C:(.*?) \| Correct:(.*?) \| Expl:(.*)", quiz_txt)
                     st.session_state.user_scores = {}
                     st.session_state.total_points = 0
                     
-                    # Audio Generation
                     audio_clean = re.sub(r'\[\[.*?\]\]', '', main_txt[:800]).strip()
                     tts = gTTS(text=audio_clean, lang='ar' if lang=='العربية' else 'en')
                     tts.save("voice.mp3")
                     st.rerun()
         except Exception as e:
-            st.error(f"Connection error: {e}")
+            st.error(f"Error: {e}")
 
-# --- 6. Content Rendering ---
+# --- 6 & 7. Rendering & Quiz (كما هي في النسخة المستقرة) ---
 if st.session_state.lesson_content:
     if os.path.exists("voice.mp3"):
         st.audio("voice.mp3")
-        
-    content = st.session_state.lesson_content
-    direction = "rtl" if lang == "العربية" else "ltr"
     
-    st.markdown(f'<div style="direction:{direction}">', unsafe_allow_html=True)
-    segments = re.split(r'\[\[(.*?)\]\]', content)
+    st.markdown(f'<div style="direction:{"rtl" if lang == "العربية" else "ltr"}">', unsafe_allow_html=True)
+    segments = re.split(r'\[\[(.*?)\]\]', st.session_state.lesson_content)
     for i, seg in enumerate(segments):
         if i % 2 == 0:
-            if seg.strip(): 
-                st.markdown(f'<div class="lesson-box">{seg.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
+            if seg.strip(): st.markdown(f'<div class="lesson-box">{seg.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
         else:
             st.image(f"https://pollinations.ai/p/{seg.replace(' ', '%20')}?width=800&height=400&seed={i}")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 7. Interactive Quiz ---
     st.divider()
     st.header("🧠 Knowledge Challenge")
-    
     for idx, (q, a, b, c, correct, expl) in enumerate(st.session_state.quiz_data):
-        qid = f"ans_status_{idx}"
+        qid = f"ans_{idx}"
         with st.container():
-            st.markdown(f'<div class="quiz-container" style="direction:{direction}">', unsafe_allow_html=True)
+            st.markdown(f'<div class="quiz-container">', unsafe_allow_html=True)
             st.write(f"**Question {idx+1}:** {q.strip()}")
-            choice = st.radio("Choose:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"radio_{idx}")
-            
-            if st.button(f"Submit Answer {idx+1}", key=f"btn_{idx}"):
-                user_letter = choice[0].upper()
-                actual_letter = correct.strip()[0].upper()
-                
+            choice = st.radio("Choose:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"r_{idx}")
+            if st.button(f"Submit Answer {idx+1}", key=f"b_{idx}"):
+                actual = correct.strip()[0].upper()
                 if qid not in st.session_state.user_scores:
-                    is_right = (user_letter == actual_letter)
-                    st.session_state.user_scores[qid] = {"correct": is_right, "expl": expl, "ans": actual_letter}
-                    if is_right: st.session_state.total_points += 20
+                    is_r = (choice[0].upper() == actual)
+                    st.session_state.user_scores[qid] = {"correct": is_r, "expl": expl, "ans": actual}
+                    if is_r: st.session_state.total_points += 20
                     st.rerun()
-            
             if qid in st.session_state.user_scores:
                 res = st.session_state.user_scores[qid]
                 if res["correct"]: st.success("✅ Correct!")
-                else: st.error(f"❌ Incorrect. Answer is {res['ans']}. {res['expl']}")
+                else: st.error(f"❌ Answer is {res['ans']}. {res['expl']}")
             st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.total_points >= 100:
         st.balloons()
-        st.markdown('<div style="text-align:center; background:#fff3cd; padding:20px; border-radius:15px; border:2px solid #f97316;"><h2>🏆 Perfect Score! Mastery Unlocked!</h2></div>', unsafe_allow_html=True)
+        st.success("🏆 Mastery Unlocked!")
