@@ -5,29 +5,24 @@ from gtts import gTTS
 import os
 import time
 
-# --- 1. إعدادات الأمان والربط ---
+# --- 1. الإعدادات ---
 st.set_page_config(page_title="Flexi Academy AI", layout="wide")
 
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("❌ API Key missing in Secrets!")
+    st.error("❌ قم بإضافة الـ API Key في الـ Secrets!")
     st.stop()
 
-# --- 2. دالة اكتشاف الموديل (لحل خطأ 404 نهائياً) ---
-def find_working_model():
-    try:
-        # البحث عن كل الموديلات التي تدعم توليد المحتوى في حسابك
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # ترتيب الأولوية: الفلاش الأحدث ثم البرو ثم القديم
-        priority = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro", "gemini-1.5-flash"]
-        for p in priority:
-            if p in available_models:
-                return p
-        return available_models[0] if available_models else None
-    except Exception as e:
-        st.error(f"Error listing models: {e}")
-        # --- 3. الواجهة الجانبية ---
+# --- 2. تهيئة الجلسة ---
+if 'content' not in st.session_state: st.session_state.content = ""
+if 'quiz' not in st.session_state: st.session_state.quiz = []
+if 'score' not in st.session_state: st.session_state.score = 0
+if 'answers' not in st.session_state: st.session_state.answers = {}
+# متغير جديد لتخزين النمط المختار (درس أم قصة) لتنسيق العرض لاحقاً
+if 'content_mode' not in st.session_state: st.session_state.content_mode = "Lesson"
+
+# --- 3. الواجهة الجانبية ---
 with st.sidebar:
     st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=180)
     st.header("👤 Profile & Settings")
