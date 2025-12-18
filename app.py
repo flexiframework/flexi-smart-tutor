@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-import reض
+import re  # تم تصحيح الخطأ هنا (إزالة حرف ض)
 from gtts import gTTS
 import urllib.request
 import urllib.parse
@@ -36,27 +36,12 @@ st.markdown("""
     img { border-radius: 15px; margin: 15px 0; border: 1px solid #ddd; }
 
     @media print {
-    /* إخفاء القائمة الجانبية، الأزرار، وعناصر التحكم عند الطباعة */
-    section[data-testid="stSidebar"], 
-    .stButton, 
-    .stAudio, 
-    footer, 
-    header,
-    button { 
-        display: none !important; 
+        section[data-testid="stSidebar"], .stButton, .stAudio, footer, header, button { 
+            display: none !important; 
+        }
+        .main .block-container { padding: 0 !important; margin: 0 !important; }
+        .lesson-box { border: none !important; box-shadow: none !important; }
     }
-    
-    /* توسيع محتوى الدرس ليملأ الصفحة الورقية */
-    .main .block-container {
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    
-    .lesson-box {
-        border: none !important;
-        box-shadow: none !important;
-    }
-}
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,45 +58,26 @@ with st.sidebar:
     content_lang = st.selectbox("Language:", ["English", "العربية", "Français"])
     style = st.selectbox("Learning Style:", ["Visual (Many Images)", "Auditory (Deep Text)", "Kinesthetic (Activities)"])
     path = st.radio("Learning Path:", ["Standard Interactive Lesson", "Comic Story Experience"])
+    
     st.divider()
     st.subheader("📊 Progress")
     st.progress(min(st.session_state.score, 100) / 100)
     st.metric("Flexi Points 🎯", st.session_state.score)
 
+    st.divider()
+    st.markdown("### 📄 خيارات الحفظ")
+    # زر الطباعة المدمج في القائمة الجانبية
+    st.components.v1.html("""
+        <script>function printPage() { window.print(); }</script>
+        <button onclick="printPage()" style="
+            width: 100%; background-color: #f97316; color: white; border: none;
+            padding: 12px; text-align: center; font-size: 16px; font-weight: bold;
+            cursor: pointer; border-radius: 10px; transition: 0.3s;">
+            🖨️ طباعة الدرس (PDF)
+        </button>
+    """, height=70)
+    st.caption("نصيحة: اختر 'Save as PDF' من خيارات الطباعة.")
 
-# --- أضف هذا الكود داخل 'with st.sidebar:' ---
-
-st.divider()
-st.markdown("### 📄 خيارات الحفظ")
-
-# زر الطباعة باستخدام JavaScript
-st.components.v1.html("""
-    <script>
-    function printPage() {
-        window.print();
-    }
-    </script>
-    <button onclick="printPage()" style="
-        width: 100%;
-        background-color: #f97316; /* لون Flexi البرتقالي */
-        color: white;
-        border: none;
-        padding: 12px 20px;
-        text-align: center;
-        text-decoration: none;
-        display: inline-block;
-        font-size: 16px;
-        font-weight: bold;
-        margin: 4px 2px;
-        cursor: pointer;
-        border-radius: 10px;
-        transition: 0.3s;
-    ">
-        🖨️ طباعة الدرس (PDF)
-    </button>
-""", height=70)
-
-st.caption("نصيحة: عند الطباعة، اختر 'Save as PDF' من خيارات الطابعة.")
 # --- 5. Main Logic ---
 st.title("🎓 Flexi Academy AI Tutor")
 topic = st.text_area("What topic should we explore?", placeholder="e.g., Water Cycle")
@@ -130,7 +96,7 @@ if st.button("Generate Experience 🚀"):
                - If Visual: Must include 6 different [[Image Description]] tags spaced out between paragraphs.
                - If Kinesthetic: Include 3 {{Activity}} boxes.
             2. Comic Path: 4 Panels with (PANEL X, CAPTION, DIALOGUE, VISUAL Description).
-            3. Resources: 2 real URLs (NASA, PhET, etc.).
+            3. Resources: 2 real URLs.
             4. Assessment: Exactly 5 MCQs (Q:, A) B) C), Correct:, Explanation:).
             """
             with st.spinner('Building your Flexi lesson...'):
@@ -146,7 +112,6 @@ if st.session_state.lesson_data:
     raw = st.session_state.lesson_data
     dir_css = "rtl" if content_lang == "العربية" else "ltr"
     
-    # Separation of Lesson and Quiz
     parts = raw.split("Q:")
     lesson_part = parts[0]
     quiz_part = "Q:" + "Q:".join(parts[1:]) if len(parts) > 1 else ""
@@ -164,83 +129,57 @@ if st.session_state.lesson_data:
                 if vis: st.image(f"https://pollinations.ai/p/comic%20style%20{vis.group(1).strip().replace(' ', '%20')}?width=600&height=400&seed={i}")
                 st.markdown('</div>', unsafe_allow_html=True)
     else:
-        # Rendering lesson with IN-TEXT Images
         st.markdown(f'<div style="direction:{dir_css}">', unsafe_allow_html=True)
-        
-        # Split text by image tags to insert images in-between
         text_segments = re.split(r'\[\[(.*?)\]\]', lesson_part)
         for idx, segment in enumerate(text_segments):
-            if idx % 2 == 0: # This is text
-                st.markdown(f'<div class="lesson-box">{segment.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
-            else: # This is an image prompt
+            if idx % 2 == 0:
+                if segment.strip(): st.markdown(f'<div class="lesson-box">{segment.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
+            else:
                 st.image(f"https://pollinations.ai/p/{segment.strip().replace(' ', '%20')}?width=800&height=400&seed={idx}", caption=f"Visual: {segment.strip()}")
         
-        # Activities for Kinesthetic
         activities = re.findall(r'{(.*?)}', lesson_part)
         for act in activities:
             st.markdown(f'<div class="activity-box">🏃 Activity: {act}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-   # --- Interactive Quiz Section (Corrected & Fully Interactive) ---
+    # --- Interactive Quiz Section ---
     st.divider()
     st.header("🧠 Knowledge Challenge")
-    
-    # استخراج الكتل النصية للأسئلة
     q_blocks = re.findall(r"Q:(.*?)Correct:(.*?)Explanation:(.*?)(?=Q:|$)", quiz_part, re.DOTALL)
     
     if not q_blocks:
-        st.warning("⚠️ Questions are being prepared, please wait a moment or try regenerating.")
+        st.warning("⚠️ Questions are being prepared...")
     else:
-        # حاوية لعرض التروفي في النهاية
         trophy_placeholder = st.empty()
-        
         for i, (q_raw, correct, expl) in enumerate(q_blocks):
             qid = f"quiz_q_{i}"
             with st.container():
                 st.markdown(f'<div class="quiz-container" style="direction:{dir_css}">', unsafe_allow_html=True)
-                
-                # عرض نص السؤال
                 question_text = q_raw.split('A)')[0].strip()
-                st.markdown(f"**Question {i+1}:** {question_text}")
-                
-                # استخراج الاختيارات A, B, C
+                st.write(f"**Question {i+1}:** {question_text}")
                 opts = re.findall(r"([A-C]\) .*?)(?=[A-C]\)|Correct:|$)", q_raw, re.DOTALL)
                 
                 if opts:
-                    # راديو بوتون للاختيار
-                    user_ans = st.radio(f"Choose your answer for Q{i+1}:", opts, key=f"radio_ans_{i}")
-                    
-                    # زر التحقق (Check Answer)
+                    user_ans = st.radio(f"Choose answer for Q{i+1}:", opts, key=f"radio_ans_{i}")
                     if st.button(f"Verify Answer {i+1} ✔️", key=f"verify_btn_{i}"):
                         is_correct = user_ans[0] == correct.strip()
-                        
-                        # تخزين النتيجة في الـ Session State
                         if qid not in st.session_state.quiz_results:
                             st.session_state.quiz_results[qid] = {"correct": is_correct, "expl": expl, "ans": correct.strip()}
-                            if is_correct:
-                                st.session_state.score += 20  # إضافة نقاط
-                            st.rerun() # تحديث الصفحة لإظهار النتيجة وشريط التقدم
+                            if is_correct: st.session_state.score += 20
+                            st.rerun()
                     
-                    # عرض النتيجة بعد التحقق
                     if qid in st.session_state.quiz_results:
                         res = st.session_state.quiz_results[qid]
-                        if res["correct"]:
-                            st.success(f"🌟 Excellent! Correct answer.")
-                        else:
-                            st.error(f"❌ Not quite. The correct answer is {res['ans']}.")
-                            st.info(f"💡 Explanation: {res['expl']}")
-                
+                        if res["correct"]: st.success(f"🌟 Correct answer!")
+                        else: st.error(f"❌ Wrong. Answer is {res['ans']}. {res['expl']}")
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # عرض التروفي والاحتفال عند اكتمال الدرجة النهائية
         if st.session_state.score >= 100:
             st.balloons()
             with trophy_placeholder:
                 st.markdown("""
-                    <div style="text-align:center; padding:40px; background-color:#fff3cd; border:4px solid #f97316; border-radius:20px;">
-                        <h1 style="font-size:80px; margin:0;">🏆</h1>
+                    <div style="text-align:center; padding:30px; background-color:#fff3cd; border:4px solid #f97316; border-radius:20px;">
+                        <h1 style="font-size:60px; margin:0;">🏆</h1>
                         <h2 style="color:#1e3a8a;">Flexi Mastery Award!</h2>
-                        <p style="font-size:20px; color:#1e3a8a;">Congratulations! You have mastered this topic with a 100% score!</p>
                     </div>
                 """, unsafe_allow_html=True)
-
