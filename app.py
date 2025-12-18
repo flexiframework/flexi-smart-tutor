@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-import re
+import reض
 from gtts import gTTS
 import urllib.request
 import urllib.parse
@@ -36,7 +36,28 @@ st.markdown("""
     img { border-radius: 15px; margin: 15px 0; border: 1px solid #ddd; }
     </style>
     """, unsafe_allow_html=True)
-
+@media print {
+    /* إخفاء القائمة الجانبية، الأزرار، وعناصر التحكم عند الطباعة */
+    section[data-testid="stSidebar"], 
+    .stButton, 
+    .stAudio, 
+    footer, 
+    header,
+    button { 
+        display: none !important; 
+    }
+    
+    /* توسيع محتوى الدرس ليملأ الصفحة الورقية */
+    .main .block-container {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    .lesson-box {
+        border: none !important;
+        box-shadow: none !important;
+    }
+}
 # --- 3. Session State ---
 if 'lesson_data' not in st.session_state: st.session_state.lesson_data = None
 if 'score' not in st.session_state: st.session_state.score = 0
@@ -55,6 +76,40 @@ with st.sidebar:
     st.progress(min(st.session_state.score, 100) / 100)
     st.metric("Flexi Points 🎯", st.session_state.score)
 
+
+# --- أضف هذا الكود داخل 'with st.sidebar:' ---
+
+st.divider()
+st.markdown("### 📄 خيارات الحفظ")
+
+# زر الطباعة باستخدام JavaScript
+st.components.v1.html("""
+    <script>
+    function printPage() {
+        window.print();
+    }
+    </script>
+    <button onclick="printPage()" style="
+        width: 100%;
+        background-color: #f97316; /* لون Flexi البرتقالي */
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        font-weight: bold;
+        margin: 4px 2px;
+        cursor: pointer;
+        border-radius: 10px;
+        transition: 0.3s;
+    ">
+        🖨️ طباعة الدرس (PDF)
+    </button>
+""", height=70)
+
+st.caption("نصيحة: عند الطباعة، اختر 'Save as PDF' من خيارات الطابعة.")
 # --- 5. Main Logic ---
 st.title("🎓 Flexi Academy AI Tutor")
 topic = st.text_area("What topic should we explore?", placeholder="e.g., Water Cycle")
@@ -124,34 +179,65 @@ if st.session_state.lesson_data:
             st.markdown(f'<div class="activity-box">🏃 Activity: {act}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Interactive Quiz Section ---
+   # --- Interactive Quiz Section (Corrected & Fully Interactive) ---
     st.divider()
     st.header("🧠 Knowledge Challenge")
+    
+    # استخراج الكتل النصية للأسئلة
     q_blocks = re.findall(r"Q:(.*?)Correct:(.*?)Explanation:(.*?)(?=Q:|$)", quiz_part, re.DOTALL)
     
     if not q_blocks:
-        st.info("Generating questions... please wait.")
+        st.warning("⚠️ Questions are being prepared, please wait a moment or try regenerating.")
     else:
+        # حاوية لعرض التروفي في النهاية
+        trophy_placeholder = st.empty()
+        
         for i, (q_raw, correct, expl) in enumerate(q_blocks):
-            qid = f"q_{i}"
+            qid = f"quiz_q_{i}"
             with st.container():
                 st.markdown(f'<div class="quiz-container" style="direction:{dir_css}">', unsafe_allow_html=True)
-                st.write(f"**Question {i+1}:** {q_raw.split('A)')[0].strip()}")
+                
+                # عرض نص السؤال
+                question_text = q_raw.split('A)')[0].strip()
+                st.markdown(f"**Question {i+1}:** {question_text}")
+                
+                # استخراج الاختيارات A, B, C
                 opts = re.findall(r"([A-C]\) .*?)(?=[A-C]\)|Correct:|$)", q_raw, re.DOTALL)
+                
                 if opts:
-                    ans = st.radio(f"Select your answer for Q{i+1}:", opts, key=f"ans_{i}")
-                    if st.button(f"Submit Q{i+1}", key=f"btn_{i}"):
-                        is_correct = ans[0] == correct.strip()
+                    # راديو بوتون للاختيار
+                    user_ans = st.radio(f"Choose your answer for Q{i+1}:", opts, key=f"radio_ans_{i}")
+                    
+                    # زر التحقق (Check Answer)
+                    if st.button(f"Verify Answer {i+1} ✔️", key=f"verify_btn_{i}"):
+                        is_correct = user_ans[0] == correct.strip()
+                        
+                        # تخزين النتيجة في الـ Session State
                         if qid not in st.session_state.quiz_results:
                             st.session_state.quiz_results[qid] = {"correct": is_correct, "expl": expl, "ans": correct.strip()}
-                            if is_correct: st.session_state.score += 20
-                            st.rerun()
+                            if is_correct:
+                                st.session_state.score += 20  # إضافة نقاط
+                            st.rerun() # تحديث الصفحة لإظهار النتيجة وشريط التقدم
+                    
+                    # عرض النتيجة بعد التحقق
                     if qid in st.session_state.quiz_results:
                         res = st.session_state.quiz_results[qid]
-                        if res["correct"]: st.success("Correct! Well done.")
-                        else: st.error(f"Not quite. The correct answer is {res['ans']}. {res['expl']}")
+                        if res["correct"]:
+                            st.success(f"🌟 Excellent! Correct answer.")
+                        else:
+                            st.error(f"❌ Not quite. The correct answer is {res['ans']}.")
+                            st.info(f"💡 Explanation: {res['expl']}")
+                
                 st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.session_state.score >= 100:
-        st.balloons()
-        st.success("🏆 Mastery Unlocked! You've completed the lesson perfectly.")
+        # عرض التروفي والاحتفال عند اكتمال الدرجة النهائية
+        if st.session_state.score >= 100:
+            st.balloons()
+            with trophy_placeholder:
+                st.markdown("""
+                    <div style="text-align:center; padding:40px; background-color:#fff3cd; border:4px solid #f97316; border-radius:20px;">
+                        <h1 style="font-size:80px; margin:0;">🏆</h1>
+                        <h2 style="color:#1e3a8a;">Flexi Mastery Award!</h2>
+                        <p style="font-size:20px; color:#1e3a8a;">Congratulations! You have mastered this topic with a 100% score!</p>
+                    </div>
+                """, unsafe_allow_html=True)
