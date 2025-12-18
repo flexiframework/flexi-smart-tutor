@@ -2,108 +2,145 @@ import streamlit as st
 import google.generativeai as genai
 import re
 from gtts import gTTS
+import urllib.request
+import urllib.parse
 import os
 
 # --- 1. API Configuration ---
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    MY_API_KEY = st.secrets["GEMINI_API_KEY"]
 else:
     st.error("⚠️ API Key not found!")
     st.stop()
 
-# --- 2. Professional UI Styling ---
-st.set_page_config(page_title="Flexi Academy AI Tutor", layout="wide")
+genai.configure(api_key=MY_API_KEY)
+
+def get_smart_model():
+    try:
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        priority_list = ["models/gemini-1.5-flash", "models/gemini-pro"]
+        for model_path in priority_list:
+            if model_path in available_models: return model_path
+        return available_models[0]
+    except: return "models/gemini-1.5-flash"
+
+# --- 2. UI Styling ---
+st.set_page_config(page_title="Flexi Academy AI Tutor", layout="wide", page_icon="🎓")
 st.markdown("""
     <style>
     :root { --flexi-blue: #1e3a8a; --flexi-orange: #f97316; }
-    .lesson-box { padding: 25px; border-radius: 15px; background: white; border-left: 5px solid var(--flexi-blue); margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    .quiz-container { background-color: #f8fafc; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; margin-bottom: 15px; }
+    .lesson-box { padding: 30px; border-radius: 15px; background: white; border-top: 5px solid var(--flexi-blue); margin-bottom: 20px; color: #333; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+    .quiz-container { background-color: #f1f8e9; padding: 25px; border-radius: 20px; border: 1px solid #c5e1a5; margin-top: 20px; }
     .stProgress > div > div > div > div { background-color: var(--flexi-orange); }
-    img { border-radius: 12px; margin: 15px 0; width: 100%; max-height: 400px; object-fit: contain; background: #f1f5f9; }
-    @media print { section[data-testid="stSidebar"], .stButton, .stAudio, footer, header { display: none !important; } }
+    img { border-radius: 15px; margin: 20px 0; border: 2px solid #eee; width: 100%; max-height: 400px; object-fit: contain; background: #f9f9f9; }
+    @media print { section[data-testid="stSidebar"], .stButton, .stAudio, footer, header, button { display: none !important; } }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. Session State Initialization ---
-if 'lesson_content' not in st.session_state: st.session_state.lesson_content = None
-if 'quiz_data' not in st.session_state: st.session_state.quiz_data = []
-if 'user_scores' not in st.session_state: st.session_state.user_scores = {}
-if 'total_points' not in st.session_state: st.session_state.total_points = 0
+# --- 3. Session State ---
+if 'lesson_data' not in st.session_state: st.session_state.lesson_data = None
+if 'score' not in st.session_state: st.session_state.score = 0
+if 'quiz_results' not in st.session_state: st.session_state.quiz_results = {}
 
-# --- 4. Sidebar ---
+# --- 4. Sidebar (English UI) ---
 with st.sidebar:
-    st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=200)
-    st.header("👤 Profile")
-    name = st.text_input("Name:", "Learner")
+    st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=220)
+    st.header("👤 Student Profile")
+    student_name = st.text_input("Name:", value="Learner")
     age = st.number_input("Age:", 5, 100, 12)
     gender = st.selectbox("Gender:", ["Male", "Female"])
-    level = st.selectbox("Level:", ["Beginner", "Intermediate", "Advanced"])
-    lang = st.selectbox("Language:", ["English", "العربية", "Français"])
-    style = st.selectbox("Style:", ["Visual (6+ Images)", "Auditory", "Kinesthetic"])
-    path = st.radio("Path:", ["Standard Lesson", "Comic Story"])
+    academic_level = st.selectbox("Academic Level:", ["Beginner", "Intermediate", "Advanced"])
+    content_lang = st.selectbox("Content Language:", ["English", "العربية", "Français"])
+    style = st.selectbox("Learning Style:", ["Visual (6+ Images)", "Auditory (Deep Text)", "Kinesthetic (Activities)"])
+    path = st.radio("Learning Path:", ["Standard Interactive Lesson", "Comic Story Experience"])
     
     st.divider()
-    st.subheader("📊 Progress")
-    st.progress(min(st.session_state.total_points, 100) / 100)
-    st.metric("Flexi Points 🎯", st.session_state.total_points)
-    
+    st.subheader("📊 Your Progress")
+    st.progress(min(st.session_state.score, 100) / 100)
+    st.metric("Flexi Points 🎯", st.session_state.score)
+
     st.divider()
+    st.markdown("### 📄 Export Options")
     st.components.v1.html("""
-        <button onclick="window.print()" style="width:100%; background:#f97316; color:white; border:none; padding:10px; font-weight:bold; border-radius:8px; cursor:pointer;">🖨️ Print to PDF</button>
-    """, height=50)
+        <script>function printPage() { window.print(); }</script>
+        <button onclick="printPage()" style="width: 100%; background-color: #f97316; color: white; border: none; padding: 12px; font-weight: bold; cursor: pointer; border-radius: 10px;">🖨️ Print Lesson (PDF)</button>
+    """, height=70)
 
-# --- 5. Main Generation Logic ---
+# --- 5. Main Logic ---
 st.title("🎓 Flexi Academy AI Tutor")
-topic = st.text_area("Topic:", placeholder="What do you want to learn?")
+topic = st.text_area("What topic should we explore today?", placeholder="e.g., How black holes work...")
 
-if st.button("Generate Lesson 🚀"):
-    if topic:
+if st.button("Start My Learning Journey 🚀"):
+    if not topic: st.error("Please enter a topic!")
+    else:
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel(get_smart_model())
             prompt = f"""
-            Tutor: Flexi Academy. Student: {name}, {gender}, {age} years old. Level: {level}.
-            Language: {lang}. Style: {style}. Path: {path}. Topic: {topic}.
-            
-            STRUCTURE:
-            1. Lesson Text: Use [[image prompt]] 6 times if visual.
-            2. Assessment: Start with 'START_QUIZ' then for each 5 questions use:
-               Q: [Question] | A: [Opt1] | B: [Opt2] | C: [Opt3] | Correct: [Letter] | Expl: [Why]
+            You are an expert Tutor at Flexi Academy. 
+            Student: {student_name}, Gender: {gender}, Age: {age}, Level: {academic_level}.
+            Response Language: {content_lang}. Style: {style}. Path: {path}.
+            Topic: {topic}.
+
+            Rules:
+            1. Language: Address the student in {content_lang} throughout the lesson.
+            2. Content: Tailor explanation to age {age} and {academic_level} level.
+            3. Visual Style: Include at least 6 image tags [[detailed visual prompt]] spread within the text.
+            4. Quiz: Exactly 5 MCQs. Mandatory format:
+               Q: [Question]
+               A) [Option 1]
+               B) [Option 2]
+               C) [Option 3]
+               Correct: [Letter A, B, or C]
+               Explanation: [Brief why]
             """
-            with st.spinner('Generating...'):
-                response = model.generate_content(prompt).text
-                # Split content and quiz
-                main_txt, quiz_txt = response.split('START_QUIZ') if 'START_QUIZ' in response else (response, "")
+            with st.spinner('Preparing your personalized lesson...'):
+                response = model.generate_content(prompt)
+                st.session_state.lesson_data = response.text
+                st.session_state.score = 0
+                st.session_state.quiz_results = {}
                 
-                st.session_state.lesson_content = main_txt
-                # Parse Quiz
-                qs = re.findall(r"Q:(.*?) \| A:(.*?) \| B:(.*?) \| C:(.*?) \| Correct:(.*?) \| Expl:(.*)", quiz_txt)
-                st.session_state.quiz_data = qs
-                st.session_state.user_scores = {}
-                st.session_state.total_points = 0
-                
-                # Audio
-                clean = re.sub(r'\[\[.*?\]\]', '', main_txt[:500])
-                tts = gTTS(text=clean, lang='en' if lang=='English' else 'ar')
+                # Audio generation
+                clean_text = re.sub(r'\[\[.*?\]\]|{.*?}|PANEL \d+|VISUAL:.*|CAPTION:|DIALOGUE:', '', response.text.split("Q:")[0]).strip()
+                lang_map = {"العربية": "ar", "English": "en", "Français": "fr"}
+                tts = gTTS(text=clean_text[:800], lang=lang_map[content_lang])
                 tts.save("voice.mp3")
                 st.rerun()
         except Exception as e: st.error(f"Error: {e}")
 
 # --- 6. Content Rendering ---
-if st.session_state.lesson_content:
-    st.audio("voice.mp3")
-    content = st.session_state.lesson_content
-    direction = "rtl" if lang == "العربية" else "ltr"
+if st.session_state.lesson_data:
+    raw = st.session_state.lesson_data
+    dir_css = "rtl" if content_lang == "العربية" else "ltr"
     
-    st.markdown(f'<div style="direction:{direction}">', unsafe_allow_html=True)
-    segments = re.split(r'\[\[(.*?)\]\]', content)
-    for i, seg in enumerate(segments):
-        if i % 2 == 0:
-            if seg.strip(): st.markdown(f'<div class="lesson-box">{seg.replace("\n", "<br>")}</div>', unsafe_allow_html=True)
-        else:
-            st.image(f"https://pollinations.ai/p/{seg.replace(' ', '%20')}?width=800&height=400&seed={i}")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.audio("voice.mp3")
 
-    # --- 7. Interactive Quiz Section ---
+    parts = raw.split("Q:")
+    lesson_part = parts[0]
+    quiz_part = "Q:" + "Q:".join(parts[1:]) if len(parts) > 1 else ""
+
+    if "Comic" in path:
+        st.subheader("🖼️ Your Learning Story")
+        panels = re.split(r'PANEL \d+', lesson_part)[1:]
+        cols = st.columns(2)
+        for i, p in enumerate(panels[:4]):
+            with cols[i % 2]:
+                st.markdown(f'<div class="comic-panel" style="direction:{dir_css}">', unsafe_allow_html=True)
+                cap = re.search(r'CAPTION:(.*?)(?=DIALOGUE:|VISUAL:|$)', p, re.S)
+                vis = re.search(r'VISUAL:(.*?)(?=$)', p, re.S)
+                if cap: st.write(f"🎬 {cap.group(1).strip()}")
+                if vis: st.image(f"https://pollinations.ai/p/{vis.group(1).strip().replace(' ', '%20')}?width=600&height=400&seed={i}")
+                st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div style="direction:{dir_css}">', unsafe_allow_html=True)
+        text_segments = re.split(r'\[\[(.*?)\]\]', lesson_part)
+        for idx, segment in enumerate(text_segments):
+            if idx % 2 == 0:
+                if segment.strip(): st.markdown(f'<div class="lesson-box">{segment.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
+            else:
+                st.image(f"https://pollinations.ai/p/{segment.strip().replace(' ', '%20')}?width=800&height=400&seed={idx}", caption=f"Visualization: {segment.strip()}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+   # --- 7. Interactive Quiz Section ---
     st.header("🧠 Knowledge Challenge")
     for idx, (q, a, b, c, correct, expl) in enumerate(st.session_state.quiz_data):
         with st.container():
