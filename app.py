@@ -28,112 +28,115 @@ def find_working_model():
     except Exception as e:
         st.error(f"Error listing models: {e}")
         return None
-
-# --- 3. تهيئة الجلسة ---
-if 'content' not in st.session_state: st.session_state.content = ""
-if 'quiz' not in st.session_state: st.session_state.quiz = []
-if 'score' not in st.session_state: st.session_state.score = 0
-if 'answers' not in st.session_state: st.session_state.answers = {}
-
-# --- 4. القائمة الجانبية (إعادة كافة الخصائص) ---
+# --- 3. الواجهة الجانبية (تمت إضافة نمط التعلم هنا) ---
 with st.sidebar:
     st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=180)
-    st.header("👤 Student Profile")
-    st_name = st.text_input("Name", "Student")
+    st.header("👤 Profile")
+    st_name = st.text_input("Name", "Learner")
     st_age = st.number_input("Age", 5, 100, 12)
-    st_gender = st.selectbox("Gender", ["Male", "Female"])
-    st_level = st.selectbox("Academic Level", ["Beginner", "Intermediate", "Advanced"])
+    st_level = st.selectbox("Level", ["Beginner", "Intermediate", "Advanced"])
     st_lang = st.selectbox("Language", ["English", "العربية"])
     
+    # إضافة عنصر نمط الطالب
+    st_style = st.selectbox("Learning Style 🧠", [
+        "Visual (بصري)", 
+        "Auditory (سمعي)", 
+        "Kinesthetic (حركي)"
+    ])
+    
     st.divider()
-    if st.button("🔄 Reset Experience"):
+    if st.button("🔄 Reset App"):
         st.session_state.clear()
         st.rerun()
 
-# --- 5. منطق التوليد ---
+# --- 4. منطق التوليد ---
 st.title("🎓 Flexi Academy AI Tutor")
-topic = st.text_input("What topic would you like to explore?", placeholder="e.g. Gravity")
+topic = st.text_input("What do you want to learn?", placeholder="e.g. Solar System")
 
 if st.button("Generate Lesson 🚀"):
-    working_model_name = find_working_model()
-    
     if not topic:
         st.warning("Please enter a topic.")
-    elif not working_model_name:
-        st.error("No compatible models found in your API key settings.")
     else:
         try:
-            model = genai.GenerativeModel(working_model_name)
+            model = genai.GenerativeModel("gemini-1.5-flash")
             
+            # تحديث الـ Prompt ليشمل نمط التعلم
             prompt = f"""
-            You are a tutor at Flexi Academy. 
-            Student: {st_name}, Gender: {st_gender}, Age: {st_age}, Level: {st_level}.
-            Language: {st_lang}. Topic: {topic}.
+            You are a professional teacher at Flexi Academy. 
+            Student Profile:
+            - Name: {st_name}
+            - Age: {st_age}
+            - Level: {st_level}
+            - Language: {st_lang}
+            - Learning Style: {st_style}
             
-            Instructions:
-            1. Explain the topic in 4 clear parts. Use language suitable for age {st_age}.
-            2. Add 6 image tags like [[visual prompt]] throughout the text.
-            3. End with '---QUIZ_START---' and 5 MCQs:
-               Q: Question | A: Opt1 | B: Opt2 | C: Opt3 | Correct: A/B/C | Expl: Why
+            Instructions based on Style:
+            - If Visual: Include vivid descriptions and exactly 6 [[image prompts]].
+            - If Auditory: Use a storytelling tone and rhythmic language.
+            - If Kinesthetic: Include a 'Small Activity' or 'Home Experiment' section.
+            
+            Task: Explain '{topic}' clearly. 
+            Format: Divide into 4 sections. Use [[image prompt]] tags.
+            End with '---QUIZ---' then 5 MCQs:
+            Q: Question | A: Opt1 | B: Opt2 | C: Opt3 | Correct: A/B/C | Expl: Why
             """
             
-            with st.spinner(f'Flexi is using {working_model_name}... Please wait...'):
+            with st.spinner(f'Flexi is preparing a {st_style} lesson for you...'):
                 response = model.generate_content(prompt)
-                full_text = response.text
                 
-                # تقسيم النص
-                if "---QUIZ_START---" in full_text:
-                    lesson, quiz = full_text.split("---QUIZ_START---")
+                if "---QUIZ---" in response.text:
+                    lesson, quiz = response.text.split("---QUIZ---")
                 else:
-                    lesson, quiz = full_text, ""
+                    lesson, quiz = response.text, ""
                 
                 st.session_state.content = lesson
                 st.session_state.quiz = re.findall(r"Q:(.*?) \| A:(.*?) \| B:(.*?) \| C:(.*?) \| Correct:(.*?) \| Expl:(.*)", quiz)
                 st.session_state.score = 0
                 st.session_state.answers = {}
                 
-                # صوت الدرس
+                # إنشاء الصوت (مهم جداً للنمط السمعي)
                 try:
-                    clean_txt = re.sub(r'\[\[.*?\]\]', '', lesson[:600])
-                    tts = gTTS(text=clean_txt, lang='en' if st_lang=="English" else 'ar')
-                    tts.save("voice.mp3")
+                    clean = re.sub(r'\[\[.*?\]\]', '', lesson[:700])
+                    gTTS(text=clean, lang='en' if st_lang=="English" else 'ar').save("voice.mp3")
                 except: pass
                 
                 st.rerun()
         except Exception as e:
-            st.error(f"Technical Error: {e}")
+            st.error(f"Error: {e}")
 
-# --- 6. عرض النتائج ---
+# --- 5. عرض النتائج ---
 if st.session_state.content:
-    if os.path.exists("voice.mp3"): st.audio("voice.mp3")
+    # لنمط التعلم السمعي، يظهر المشغل الصوتي في الأعلى بشكل بارز
+    if os.path.exists("voice.mp3"):
+        st.write("🎧 **Listen to your lesson:**")
+        st.audio("voice.mp3")
     
     direction = "rtl" if st_lang == "العربية" else "ltr"
     st.markdown(f'<div style="direction:{direction}">', unsafe_allow_html=True)
     
-    # عرض النصوص والصور
     parts = re.split(r'\[\[(.*?)\]\]', st.session_state.content)
     for i, p in enumerate(parts):
         if i % 2 == 0:
-            if p.strip(): st.markdown(f'<div style="background:white; padding:20px; border-radius:10px; border-left:5px solid #1e3a8a; margin:10px 0; color:#333;">{p.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
+            if p.strip(): 
+                st.markdown(f'<div style="background:white; padding:20px; border-radius:10px; border-left:5px solid #1e3a8a; margin:10px 0; color:#333; line-height:1.6;">{p.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
         else:
+            # الصور تظهر بوضوح للنمط البصري
             st.image(f"https://pollinations.ai/p/{p.strip().replace(' ', '%20')}?width=800&height=400&seed={i}")
     
-    # عرض الأسئلة
+    # عرض الكويز بنفس الطريقة المستقرة
     if st.session_state.quiz:
         st.divider()
         st.header("🧠 Knowledge Challenge")
         for idx, (q, a, b, c, correct, expl) in enumerate(st.session_state.quiz):
             qid = f"q_{idx}"
             st.write(f"**Q{idx+1}:** {q.strip()}")
-            choice = st.radio("Choose:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"r_{idx}")
-            
+            choice = st.radio("Choose answer:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"r_{idx}")
             if st.button(f"Submit Q{idx+1}", key=f"b_{idx}"):
                 if qid not in st.session_state.answers:
                     is_correct = choice[0].upper() == correct.strip()[0].upper()
                     st.session_state.answers[qid] = {"res": is_correct, "expl": expl, "c": correct}
                     if is_correct: st.session_state.score += 20
                     st.rerun()
-            
             if qid in st.session_state.answers:
                 ans = st.session_state.answers[qid]
                 if ans["res"]: st.success("Correct! 🌟")
