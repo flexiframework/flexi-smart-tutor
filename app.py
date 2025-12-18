@@ -6,12 +6,14 @@ import urllib.request
 import urllib.parse
 import os
 
-# --- API Configuration ---
-# نستخدم Secrets للأمان، ونضع fallback للمفتاح اليدوي
-try:
+# --- Secure API Configuration ---
+import streamlit as st
+
+if "GEMINI_API_KEY" in st.secrets:
     MY_API_KEY = st.secrets["GEMINI_API_KEY"]
-except:
-    MY_API_KEY = "AIzaSyAsPHlq9xzJ42VsVon5lK3141ahatiKGJs"
+else:
+    st.error("Missing API Key! Please add GEMINI_API_KEY to Streamlit Secrets.")
+    st.stop()
 
 genai.configure(api_key=MY_API_KEY)
 
@@ -136,3 +138,4 @@ if st.session_state.lesson_data:
     if st.session_state.score >= 40:
         st.balloons()
         st.markdown('<div class="trophy-box"><h1>🏆</h1><h2>Excellent!</h2></div>', unsafe_allow_html=True)
+
