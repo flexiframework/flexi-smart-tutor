@@ -2,151 +2,152 @@ import streamlit as st
 import google.generativeai as genai
 import re
 from gtts import gTTS
+import urllib.request
+import urllib.parse
 import os
-import time
-from google.api_core import exceptions
 
-# --- 1. API Configuration ---
-if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-else:
-    st.error("⚠️ API Key not found in Secrets!")
-    st.stop()
+# --- إعدادات مفتاح API ---
+MY_API_KEY = "AIzaSyC58lGS3cya4K6To9HdbRNqmBduGmgvu9o"
+genai.configure(api_key=MY_API_KEY)
 
-# --- 2. Smart Model Discovery ---
-@st.cache_resource
-def get_available_model():
-    """يكتشف الموديلات المتاحة في حسابك لتجنب خطأ 404"""
-    try:
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # الأولوية لـ Flash لسرعته، ثم Pro
-        for target in ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-pro"]:
-            if target in models:
-                return target
-        return models[0] if models else None
-    except Exception as e:
-        st.error(f"Failed to list models: {e}")
-        return None
+st.set_page_config(page_title="منصة فليكسي التعليمية الشاملة", layout="wide", page_icon="🏆")
 
-# --- 3. UI Styling ---
-st.set_page_config(page_title="Flexi Academy AI Tutor", layout="wide")
+# --- تخصيص التصميم (CSS) ---
 st.markdown("""
     <style>
-    :root { --flexi-blue: #1e3a8a; --flexi-orange: #f97316; }
-    .lesson-box { padding: 25px; border-radius: 15px; background: white; border-left: 5px solid var(--flexi-blue); margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); color: #333; }
-    .quiz-container { background-color: #f8fafc; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; margin-bottom: 15px; }
-    .stProgress > div > div > div > div { background-color: var(--flexi-orange); }
-    img { border-radius: 12px; margin: 15px 0; width: 100%; max-height: 400px; object-fit: contain; background: #f1f5f9; }
-    @media print { section[data-testid="stSidebar"], .stButton, .stAudio, footer, header { display: none !important; } }
+    .lesson-box { padding: 25px; border-radius: 15px; border-left: 10px solid #1a73e8; background-color: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; color: #2c3e50; }
+    .comic-panel { border: 4px solid #000; padding: 15px; background: white; box-shadow: 8px 8px 0px #000; margin-bottom: 20px; }
+    .quiz-container { background-color: #f8f9fa; padding: 20px; border-radius: 15px; border: 1px solid #e0e0e0; margin-bottom: 20px; }
+    .trophy-box { text-align: center; padding: 30px; background-color: #fff3cd; border: 3px solid #ffeeba; border-radius: 20px; margin-top: 30px; animation: bounce 2s infinite; }
+    @keyframes bounce { 0%, 100% {transform: translateY(0);} 50% {transform: translateY(-10px);} }
+    @media print { section[data-testid="stSidebar"], .stButton, .stAudio, footer, header, iframe, .no-print { display: none !important; } }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. Session State ---
-if 'lesson_content' not in st.session_state: st.session_state.lesson_content = None
-if 'quiz_data' not in st.session_state: st.session_state.quiz_data = []
-if 'user_scores' not in st.session_state: st.session_state.user_scores = {}
-if 'total_points' not in st.session_state: st.session_state.total_points = 0
+# --- الوظائف المساعدة ---
+def get_youtube_video(query, lang):
+    suffix = " educational" if lang != "العربية" else " تعليمي"
+    try:
+        query_string = urllib.parse.urlencode({"search_query": query + suffix})
+        format_url = urllib.request.urlopen("https://www.youtube.com/results?" + query_string)
+        search_results = re.findall(r"watch\?v=(\S{11})", format_url.read().decode())
+        if search_results: return "https://www.youtube.com/embed/" + search_results[0]
+    except: return None
 
-# --- 5. Sidebar ---
+def clean_text_for_audio(text):
+    text = re.sub(r'\[\[.*?\]\]|PANEL \d+|VISUAL:.*|CAPTION:|DIALOGUE:', '', text)
+    text = re.sub(r'[^\w\s\u0621-\u064A.]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+# --- إدارة الحالة (Session State) ---
+if 'lesson_data' not in st.session_state: st.session_state.lesson_data = None
+if 'score' not in st.session_state: st.session_state.score = 0
+if 'quiz_results' not in st.session_state: st.session_state.quiz_results = {}
+
+# --- القائمة الجانبية (كاملة بكل المعايير) ---
 with st.sidebar:
-    st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=200)
-    st.header("👤 Profile")
-    name = st.text_input("Name:", "Learner")
-    age = st.number_input("Age:", 5, 100, 12)
-    gender = st.selectbox("Gender:", ["Male", "Female"])
-    level = st.selectbox("Academic Level:", ["Beginner", "Intermediate", "Advanced"])
-    lang = st.selectbox("Language:", ["English", "العربية", "Français"])
-    style = st.selectbox("Learning Style:", ["Visual (6+ Images)", "Auditory", "Kinesthetic"])
-    path = st.radio("Path:", ["Standard Lesson", "Comic Story"])
-    
+    st.header("⚙️ تخصيص التجربة")
+    student_name = st.text_input("اسم الطالب:", value="بطل فليكسي")
+    age = st.number_input("السن:", min_value=5, max_value=100, value=12)
+    gender = st.selectbox("الجنس:", ["ذكر", "أنثى"])
+    language = st.selectbox("لغة الشرح:", ["English", "العربية", "Français", "Deutsch"])
+    level = st.selectbox("المستوى الأكاديمي:", ["مبتدئ", "متوسط", "متقدم"])
+    learning_style = st.selectbox("نمط المتعلم الأساسي:", ["بصري (Visual)", "سمعي (Auditory)", "حركي (Kinesthetic)"])
     st.divider()
-    st.progress(min(st.session_state.total_points, 100) / 100)
-    st.metric("Flexi Points 🎯", st.session_state.total_points)
-    
-    st.components.v1.html("""
-        <button onclick="window.print()" style="width:100%; background:#f97316; color:white; border:none; padding:10px; font-weight:bold; border-radius:8px; cursor:pointer;">🖨️ Print Lesson (PDF)</button>
-    """, height=50)
+    output_format = st.radio("شكل المخرجات المطلوب:", ["درس تفاعلي عادي", "قصة مصورة (Comic)"])
+    st.divider()
+    st.metric("مجموع النقاط 🎯", st.session_state.score)
+    st.divider()
+    st.markdown("### 🖨️ أدوات الحفظ")
+    print_btn_html = """<button onclick="window.print()" style="width: 100%; background-color: #1a73e8; color: white; padding: 12px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold;">🖨️ طباعة أو حفظ PDF</button>"""
+    st.components.v1.html(print_btn_html, height=70)
 
-# --- 6. Generation Logic ---
-st.title("🎓 Flexi Academy AI Tutor")
-topic = st.text_area("What do you want to learn?", placeholder="e.g., How stars are born")
+# --- المنطقة الرئيسية ---
+st.title("🌟 منصة فليكسي للتعلم الذكي")
+source_content = st.text_area("أدخل موضوع الدرس:", placeholder="مثال: كيف تعمل الجاذبية؟")
 
-chosen_model = get_available_model()
-
-if st.button("Generate Lesson 🚀"):
-    if not topic or not chosen_model:
-        st.error("Topic empty or No models found!")
+if st.button("توليد المحتوى المخصص 🚀"):
+    if not source_content:
+        st.error("الرجاء إدخال موضوع!")
     else:
         try:
-            model = genai.GenerativeModel(chosen_model)
+            model = genai.GenerativeModel("gemini-1.5-flash")
             prompt = f"""
-            Tutor: Flexi Academy. Student: {name}, {gender}, {age}. Level: {level}.
-            Language: {lang}. Style: {style}. Path: {path}. Topic: {topic}.
-            
-            STRUCTURE:
-            1. Lesson Content: If Visual, include 6 [[detailed image prompt]] tags.
-            2. Assessment: Mandatory 'START_QUIZ' separator. Then 5 MCQs as:
-               Q: [Question] | A: [Opt1] | B: [Opt2] | C: [Opt3] | Correct: [Letter] | Expl: [Why]
+            System: Expert Tutor. Response must be in {language}.
+            Student: {student_name}, Age: {age}, Gender: {gender}, Level: {level}, Style: {learning_style}.
+            Task: Create {output_format} about {source_content}.
+            Format Rules:
+            - If Lesson: Use ### for headers and [[Detailed Image Prompt]].
+            - If Comic: 4 Panels (PANEL X, CAPTION, DIALOGUE, VISUAL description).
+            - At the end, include 4 MCQs: Q:, A) B) C), Correct: [Letter], Explanation:.
             """
-            
-            with st.spinner(f'Using {chosen_model}... Building lesson...'):
-                response_text = ""
-                for attempt in range(3):
-                    try:
-                        resp = model.generate_content(prompt)
-                        response_text = resp.text
-                        break
-                    except exceptions.ResourceExhausted:
-                        time.sleep(5)
-                
-                if response_text:
-                    main_txt, quiz_txt = response_text.split('START_QUIZ') if 'START_QUIZ' in response_text else (response_text, "")
-                    st.session_state.lesson_content = main_txt
-                    st.session_state.quiz_data = re.findall(r"Q:(.*?) \| A:(.*?) \| B:(.*?) \| C:(.*?) \| Correct:(.*?) \| Expl:(.*)", quiz_txt)
-                    st.session_state.user_scores = {}
-                    st.session_state.total_points = 0
-                    
-                    audio_txt = re.sub(r'\[\[.*?\]\]', '', main_txt[:800])
-                    tts = gTTS(text=audio_txt, lang='ar' if lang=='العربية' else 'en')
-                    tts.save("voice.mp3")
-                    st.rerun()
-        except Exception as e:
-            st.error(f"Error with {chosen_model}: {e}")
+            with st.spinner('جاري تحضير درسك التفاعلي...'):
+                response = model.generate_content(prompt)
+                st.session_state.lesson_data = response.text
+                st.session_state.score = 0
+                st.session_state.quiz_results = {}
+                audio_text = clean_text_for_audio(st.session_state.lesson_data.split("Q:")[0])
+                lang_map = {"العربية": "ar", "English": "en", "Français": "fr", "Deutsch": "de"}
+                gTTS(text=audio_text[:600], lang=lang_map[language]).save("voice.mp3")
+                st.rerun()
+        except Exception as e: st.error(f"Error: {e}")
 
-# --- 7. Rendering Content ---
-if st.session_state.lesson_content:
-    if os.path.exists("voice.mp3"): st.audio("voice.mp3")
-    
-    st.markdown(f'<div style="direction:{"rtl" if lang == "العربية" else "ltr"}">', unsafe_allow_html=True)
-    segments = re.split(r'\[\[(.*?)\]\]', st.session_state.lesson_content)
-    for i, seg in enumerate(segments):
-        if i % 2 == 0:
-            if seg.strip(): st.markdown(f'<div class="lesson-box">{seg.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
-        else:
-            st.image(f"https://pollinations.ai/p/{seg.replace(' ', '%20')}?width=800&height=400&seed={i}")
-    st.markdown('</div>', unsafe_allow_html=True)
+# --- عرض النتائج ---
+if st.session_state.lesson_data:
+    content = st.session_state.lesson_data
+    dir_css = "rtl" if language == "العربية" else "ltr"
+    st.audio("voice.mp3")
 
-    # --- 8. Interactive Quiz ---
+    if "قصة مصورة" in output_format or "Comic" in output_format:
+        panels = re.split(r'PANEL \d+', content.split("Q:")[0])[1:]
+        cols = st.columns(2)
+        for i, p in enumerate(panels[:4]):
+            with cols[i % 2]:
+                st.markdown(f'<div class="comic-panel" style="direction:{dir_css}">', unsafe_allow_html=True)
+                vis = re.search(r'VISUAL:(.*?)(?=$)', p, re.S)
+                if vis: st.image(f"https://pollinations.ai/p/{vis.group(1).strip().replace(' ', '%20')}?width=600&height=400&seed={i}")
+                st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        v_url = get_youtube_video(source_content, language)
+        if v_url: st.markdown(f'<iframe width="100%" height="500" src="{v_url}" frameborder="0" allowfullscreen></iframe>', unsafe_allow_html=True)
+        
+        body = content.split("Q:")[0]
+        img_match = re.search(r'\[\[(.*?)\]\]', body)
+        if img_match: st.image(f"https://pollinations.ai/p/{img_match.group(1).replace(' ', '%20')}?width=1024&height=500&model=flux")
+        st.markdown(f'<div class="lesson-box" style="direction:{dir_css}">{re.sub(r"\[\[.*?\]\]", "", body).replace("###", "📌").replace("\n","<br>")}</div>', unsafe_allow_html=True)
+
+    # --- القسم التفاعلي للأسئلة ---
     st.divider()
-    st.header("🧠 Knowledge Challenge")
-    for idx, (q, a, b, c, correct, expl) in enumerate(st.session_state.quiz_data):
-        qid = f"q_{idx}"
+    st.header("🧠 Test Your Knowledge")
+    q_blocks = re.findall(r"Q:(.*?)Correct:(.*?)Explanation:(.*?)(?=Q:|$)", content, re.DOTALL)
+    
+    for i, (q_raw, correct, expl) in enumerate(q_blocks):
+        qid = f"q_{i}"
         with st.container():
-            st.markdown(f'<div class="quiz-container">', unsafe_allow_html=True)
-            st.write(f"**Q{idx+1}:** {q.strip()}")
-            ans = st.radio("Select:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"r_{idx}")
-            if st.button(f"Submit Q{idx+1}", key=f"b_{idx}"):
-                if qid not in st.session_state.user_scores:
-                    is_correct = ans[0].upper() == correct.strip()[0].upper()
-                    st.session_state.user_scores[qid] = {"res": is_correct, "expl": expl, "c": correct}
-                    if is_correct: st.session_state.total_points += 20
-                    st.rerun()
-            if qid in st.session_state.user_scores:
-                r = st.session_state.user_scores[qid]
-                if r["res"]: st.success("🌟 Correct!")
-                else: st.error(f"❌ Correct is {r['c']}. {r['expl']}")
+            st.markdown(f'<div class="quiz-container" style="direction:{dir_css}">', unsafe_allow_html=True)
+            st.write(f"**Question {i+1}:** {q_raw.split('A)')[0].strip()}")
+            opts = re.findall(r"([A-C]\) .*?)(?=[A-C]\)|Correct:|$)", q_raw, re.DOTALL)
+            
+            if opts:
+                user_choice = st.radio(f"Select your answer:", opts, key=f"radio_{i}")
+                if st.button(f"تأكيد الإجابة {i+1} ✔️", key=f"btn_{i}"):
+                    is_correct = user_choice[0] == correct.strip()
+                    st.session_state.quiz_results[qid] = {"correct": is_correct, "expl": expl, "ans": correct.strip()}
+                    if is_correct: st.session_state.score += 10
+                
+                if qid in st.session_state.quiz_results:
+                    res = st.session_state.quiz_results[qid]
+                    if res["correct"]: st.success(f"إجابة صحيحة! {res['expl']}")
+                    else: st.error(f"إجابة خاطئة. الإجابة الصحيحة هي {res['ans']}. {res['expl']}")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.session_state.total_points >= 100:
+    # --- احتفالية التروفي ---
+    if st.session_state.score >= 40:
         st.balloons()
-        st.success("🏆 Perfect Score!")
+        st.markdown(f"""
+            <div class="trophy-box">
+                <h1 style="font-size: 80px;">🏆</h1>
+                <h2 style="color: #856404;">تهانينا يا {student_name}!</h2>
+                <p style="color: #856404; font-size: 18px;">لقد حصلت على الدرجة النهائية وأتقنت الدرس ببراعة!</p>
+            </div>
+        """, unsafe_allow_html=True)
