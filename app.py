@@ -7,8 +7,12 @@ import urllib.parse
 import os
 
 # --- الإعدادات ---
-MY_API_KEY = "AIzaSyC58lGS3cya4K6To9HdbRNqmBduGmgvu9o"
-genai.configure(api_key=MY_API_KEY)
+# --- 1. API Configuration ---
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+else:
+    st.error("⚠️ API Key not found in Secrets!")
+    st.stop()
 
 st.set_page_config(page_title="منصة فليكسي التعليمية الشاملة", layout="wide", page_icon="🏆")
 
@@ -158,3 +162,4 @@ if st.session_state.lesson_data:
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.sidebar.metric("نقاط التحدي", st.session_state.score)
+
