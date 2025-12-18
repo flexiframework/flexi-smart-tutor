@@ -82,7 +82,7 @@ if 'quiz_results' not in st.session_state: st.session_state.quiz_results = {}
 # --- 5. Sidebar (Flexi Academy Profile) ---
 with st.sidebar:
     # Adding School Logo
-    st.image("https://flexiacademy.com/wp-content/uploads/2022/10/Flexi-Academy-Logo.png", width=200)
+    st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=200)
     st.header("👤 Student Profile")
     student_name = st.text_input("Name:", value="Learner")
     age = st.number_input("Age:", 5, 18, 12)
@@ -221,3 +221,4 @@ if st.session_state.lesson_data:
     if st.session_state.score >= 40:
         st.balloons()
         st.markdown(f'<div class="trophy-box"><h1>🏆</h1><h2>Flexi Excellence Award!</h2><p>Congratulations {student_name}!</p></div>', unsafe_allow_html=True)
+
