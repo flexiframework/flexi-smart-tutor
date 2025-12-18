@@ -139,31 +139,67 @@ if st.session_state.lesson_data:
             else:
                 st.image(f"https://pollinations.ai/p/{segment.strip().replace(' ', '%20')}?width=800&height=400&seed={idx}", caption=f"Visualization: {segment.strip()}")
         st.markdown('</div>', unsafe_allow_html=True)
-
-   # --- 7. Interactive Quiz Section ---
+# --- Interactive Quiz Section (Optimized & Responsive) ---
+    st.divider()
     st.header("🧠 Knowledge Challenge")
-    for idx, (q, a, b, c, correct, expl) in enumerate(st.session_state.quiz_data):
-        with st.container():
-            st.markdown(f'<div class="quiz-container" style="direction:{direction}">', unsafe_allow_html=True)
-            st.write(f"**Question {idx+1}:** {q.strip()}")
-            choice = st.radio("Choose:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"q_{idx}")
+    
+    # Check if quiz data exists in session state
+    if not st.session_state.quiz_data:
+        st.info("The knowledge challenge is being prepared. If it doesn't appear, please click 'Generate Lesson' again.")
+    else:
+        # Progress bar for the quiz specifically
+        completed_q = len(st.session_state.user_scores)
+        st.write(f"Questions Completed: {completed_q} / {len(st.session_state.quiz_data)}")
+        
+        for idx, (q, a, b, c, correct, expl) in enumerate(st.session_state.quiz_data):
+            qid = f"quiz_question_{idx}"
             
-            if st.button(f"Submit Q{idx+1}", key=f"btn_{idx}"):
-                user_letter = choice[0]
-                actual_correct = correct.strip()[0]
+            with st.container():
+                # Apply styling based on answer status
+                st.markdown(f'<div class="quiz-container" style="direction:{direction}">', unsafe_allow_html=True)
                 
-                if idx not in st.session_state.user_scores:
-                    is_right = user_letter == actual_correct
-                    st.session_state.user_scores[idx] = {"correct": is_right, "expl": expl}
-                    if is_right: st.session_state.total_points += 20
-                    st.rerun()
-            
-            if idx in st.session_state.user_scores:
-                res = st.session_state.user_scores[idx]
-                if res['correct']: st.success("✅ Correct!")
-                else: st.error(f"❌ Wrong. Correct is {correct}. {res['expl']}")
-            st.markdown('</div>', unsafe_allow_html=True)
+                st.subheader(f"Question {idx+1}")
+                st.write(q.strip())
+                
+                # Show Radio options
+                options = [f"A: {a.strip()}", f"B: {b.strip()}", f"C: {c.strip()}"]
+                user_choice = st.radio(f"Select your answer for Q{idx+1}:", options, key=f"radio_{idx}")
+                
+                # Check Button
+                if st.button(f"Check Answer {idx+1} ✔️", key=f"btn_{idx}"):
+                    # Logic: Compare the first letter (A, B, or C)
+                    selected_letter = user_choice[0].upper()
+                    correct_letter = correct.strip()[0].upper()
+                    
+                    if qid not in st.session_state.user_scores:
+                        is_right = (selected_letter == correct_letter)
+                        st.session_state.user_scores[qid] = {
+                            "is_correct": is_right,
+                            "explanation": expl,
+                            "correct_ans": correct_letter
+                        }
+                        if is_right:
+                            st.session_state.total_points += 20
+                        st.rerun()
 
-    if st.session_state.total_points >= 100:
-        st.balloons()
-        st.success("🏆 Perfect Score! You are a Master!")
+                # Results Feedback
+                if qid in st.session_state.user_scores:
+                    result = st.session_state.user_scores[qid]
+                    if result["is_correct"]:
+                        st.success(f"🌟 Correct! Well done.")
+                    else:
+                        st.error(f"❌ Incorrect. The right answer is {result['correct_ans']}.")
+                        st.info(f"💡 **Explanation:** {result['explanation']}")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        # Final Trophy Celebration
+        if st.session_state.total_points >= 100:
+            st.balloons()
+            st.markdown("""
+                <div style="text-align:center; padding:30px; background-color:#fff3cd; border:4px solid #f97316; border-radius:20px; margin-top:20px;">
+                    <h1 style="font-size:70px; margin:0;">🏆</h1>
+                    <h2 style="color:#1e3a8a;">Mastery Unlocked!</h2>
+                    <p style="font-size:18px; color:#1e3a8a; font-weight:bold;">Congratulations! You've completed the Flexi Knowledge Challenge with 100% accuracy!</p>
+                </div>
+            """, unsafe_allow_html=True)
