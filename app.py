@@ -19,8 +19,6 @@ if 'content' not in st.session_state: st.session_state.content = ""
 if 'quiz' not in st.session_state: st.session_state.quiz = []
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'answers' not in st.session_state: st.session_state.answers = {}
-# متغير جديد لتخزين النمط المختار (درس أم قصة) لتنسيق العرض لاحقاً
-if 'content_mode' not in st.session_state: st.session_state.content_mode = "Lesson"
 
 # --- 3. الواجهة الجانبية ---
 with st.sidebar:
@@ -162,3 +160,4 @@ if st.session_state.content:
                 ans = st.session_state.answers[qid]
                 if ans["res"]: st.success("Correct! 🌟")
                 else: st.error(f"Wrong. Answer is {ans['c']}. {ans['expl']}")
+
