@@ -60,8 +60,7 @@ if st.button("Generate Content 🚀"):
             
             # --- الحل النهائي لخطأ 404 ---
             # تعريف الموديل داخل زر الضغط لضمان تحميل الإعدادات أولاً
-            model = genai.GenerativeModel(
-                model_name="models/gemini-1.5-flash"
+            model = genai.GenerativeModel("gemini-1.5-flash")
             )
             
             base_prompt = f"""
@@ -143,3 +142,4 @@ if st.session_state.content:
                 else: st.error(f"Wrong. Answer is {ans['c']}. {ans['expl']}")
 
     st.markdown('</div>', unsafe_allow_html=True)
+
