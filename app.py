@@ -9,10 +9,12 @@ import time
 st.set_page_config(page_title="Flexi Academy AI", layout="wide")
 
 if "GEMINI_API_KEY" in st.secrets:
+    # نقوم فقط بضبط الإعدادات هنا
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
     st.error("❌ قم بإضافة الـ API Key في الـ Secrets!")
     st.stop()
+
 
 # --- 2. تهيئة الجلسة ---
 if 'content' not in st.session_state: st.session_state.content = ""
@@ -160,4 +162,5 @@ if st.session_state.content:
                 ans = st.session_state.answers[qid]
                 if ans["res"]: st.success("Correct! 🌟")
                 else: st.error(f"Wrong. Answer is {ans['c']}. {ans['expl']}")
+
 
