@@ -7,9 +7,13 @@ import urllib.parse
 import os
 
 # --- API Config ---
-MY_API_KEY = "AIzaSyC58lGS3cya4K6To9HdbRNqmBduGmgvu9o"
-genai.configure(api_key=MY_API_KEY)
+if "GEMINI_API_KEY" in st.secrets:
+    MY_API_KEY = st.secrets["GEMINI_API_KEY"]
+else:
+    st.error("خطأ: مفتاح API غير موجود. يرجى إضافته في إعدادات Secrets في Streamlit Cloud باسم GEMINI_API_KEY.")
+    st.stop()
 
+genai.configure(api_key=MY_API_KEY)
 st.set_page_config(page_title="Flexy AI Tutor", layout="wide", page_icon="🎓")
 
 # --- UI Styling ---
@@ -162,3 +166,4 @@ if st.session_state.lesson_data:
             st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.score >= 40: st.balloons()
+
