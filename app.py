@@ -6,41 +6,43 @@ import urllib.request
 import urllib.parse
 import os
 
-# --- 1. إعداد الـ API والتأكد من الاتصال ---
+# --- 1. إعدادات الصفحة (يجب أن يكون أول أمر Streamlit) ---
+st.set_page_config(page_title="Flexy AI Tutor", layout="wide", page_icon="🎓")
+
+# --- 2. إعداد الـ API والتأكد من الاتصال ---
 if "GEMINI_API_KEY" in st.secrets:
     MY_API_KEY = st.secrets["GEMINI_API_KEY"]
-    # إعداد المكتبة بالمفتاح
     genai.configure(api_key=MY_API_KEY)
 else:
     st.error("❌ مفتاح API غير موجود في إعدادات Secrets!")
     st.info("تأكد من إضافة GEMINI_API_KEY داخل مربع Secrets في Streamlit Cloud.")
     st.stop()
 
-# --- 2. فحص صلاحية المفتاح والموديلات المتاحة (Diagnostics) ---
+# --- 3. فحص صلاحية الاتصال بالموديلات ---
 @st.cache_resource
-def check_api_connection():
-    try:
-        # محاولة سرد الموديلات المتاحة لهذا المفتاح
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        return True, available_models
-    except Exception as e:
-        return False, str(e)
+def get_working_model():
+    # محاولة تجربة الموديلات المتاحة بالترتيب
+    available_models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+    for name in available_models:
+        try:
+            model = genai.GenerativeModel(name)
+            # تجربة توليد نص بسيط جداً للتأكد من الصلاحية
+            model.generate_content("Hi", generation_config={"max_output_tokens": 1})
+            return model, name
+        except Exception:
+            continue
+    return None, None
 
-connection_status, result = check_api_connection()
+model, model_name = get_working_model()
 
-if not connection_status:
-    st.error("🛑 فشل الاتصال بـ Google AI:")
-    st.warning(f"السبب التقني: {result}")
-    st.info("💡 نصيحة: إذا كان الخطأ 'API key not valid'، تأكد من نسخ المفتاح الجديد من AI Studio ووضعه بين علامتي تنصيص في Secrets.")
+if model:
+    st.sidebar.success(f"✅ متصل بـ {model_name}")
+else:
+    st.error("🛑 فشل الاتصال بـ Google AI")
+    st.warning("السبب: المفتاح قد يكون غير صالح أو لا يملك صلاحية الوصول للموديلات.")
     st.stop()
 
-# --- 3. إعدادات الصفحة ---
-st.set_page_config(page_title="Flexy AI Tutor", layout="wide", page_icon="🎓")
-
-# عرض رسالة نجاح مخفية في الشريط الجانبي للتأكد
-st.sidebar.success("✅ متصل بـ Gemini")"🎓")
-
-# --- UI Styling ---
+# --- 4. UI Styling (تنسيقات الواجهة) ---
 st.markdown("""
     <style>
     .lesson-box { padding: 25px; border-radius: 15px; border-left: 10px solid #1a73e8; background-color: #ffffff; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; color: #2c3e50; }
@@ -54,7 +56,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- Helper Functions ---
+# --- 5. وظائف مساعدة (Helper Functions) ---
 def get_youtube_video(query, language):
     suffix = " educational" if language != "العربية" else " تعليمي"
     try:
@@ -69,58 +71,37 @@ def clean_text_for_audio(text):
     text = re.sub(r'[^\w\s\u0621-\u064A.]', ' ', text)
     return re.sub(r'\s+', ' ', text).strip()
 
-# --- State Management ---
+# --- 6. إدارة حالة التطبيق (State Management) ---
 if 'lesson_data' not in st.session_state: st.session_state.lesson_data = None
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'quiz_results' not in st.session_state: st.session_state.quiz_results = {}
 
-# --- Sidebar Configuration ---
+# --- 7. القائمة الجانبية (Sidebar) ---
 with st.sidebar:
-    st.header("⚙️ Settings")
-    student_name = st.text_input("Student Name:", value="Student")
-    age = st.number_input("Age:", min_value=5, value=12)
-    language = st.selectbox("Language:", ["English", "العربية", "Français", "Deutsch"])
-    level = st.selectbox("Level:", ["Beginner", "Intermediate", "Advanced"])
-    style = st.selectbox("Learning Style:", ["Visual", "Auditory", "Kinesthetic"])
-    output_format = st.radio("Output Format:", ["Standard Lesson", "Comic Story"])
+    st.header("⚙️ الإعدادات")
+    student_name = st.text_input("اسم الطالب:", value="Student")
+    age = st.number_input("العمر:", min_value=5, value=12)
+    language = st.selectbox("اللغة:", ["العربية", "English", "Français", "Deutsch"])
+    level = st.selectbox("المستوى:", ["Beginner", "Intermediate", "Advanced"])
+    style = st.selectbox("نمط التعلم:", ["Visual", "Auditory", "Kinesthetic"])
+    output_format = st.radio("شكل المخرج:", ["Standard Lesson", "Comic Story"])
     
     st.divider()
-    st.metric("Total Score", st.session_state.score)
+    st.metric("رصيد النقاط", st.session_state.score)
     
-    print_btn = """<button onclick="window.print()" style="width: 100%; background-color: #1a73e8; color: white; padding: 12px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold;">🖨️ Save as PDF</button>"""
+    # زر الطباعة بتنسيق HTML
+    print_btn = """<button onclick="window.print()" style="width: 100%; background-color: #1a73e8; color: white; padding: 12px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold;">🖨️ حفظ كملف PDF</button>"""
     st.components.v1.html(print_btn, height=60)
 
-# --- Main Content ---
-st.title("🌟 Flexy AI Interactive Learning")
-topic = st.text_area("ماذا تحب أن تتعلم اليوم؟", placeholder="مثلاً: كيف تعمل البراكين؟")
+# --- 8. المحتوى الرئيسي ---
+st.title("🌟 معلم Flexy الذكي")
+topic = st.text_area("ماذا تحب أن تتعلم اليوم؟", placeholder="مثلاً: كيف تعمل الثقوب السوداء؟")
 
 if st.button("ابدأ التعلم الآن 🚀"):
     if not topic:
         st.error("الرجاء إدخال موضوع أولاً!")
     else:
         try:
-            # --- منطق اختيار الموديل مع دعم الموديلات الجديدة التي وجدتها في حسابك ---
-            model = None
-            # أضفنا gemini-1.5-pro كخيار قوي جداً متاح لك
-            available_models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-            
-            with st.spinner('جاري الاتصال بذكاء Flexy...'):
-                for model_name in available_models:
-                    try:
-                        test_model = genai.GenerativeModel(model_name)
-                        # فحص سريع للاتصال
-                        test_model.generate_content("test", generation_config={"max_output_tokens": 1})
-                        model = test_model
-                        break 
-                    except Exception:
-                        continue
-            
-            if model is None:
-                st.error("عذراً، لم نتمكن من الاتصال بالخادم. يرجى التحقق من مفتاح API في الإعدادات (Secrets).")
-                st.stop()
-
-            # --- إعداد البرومبت ---
-            is_comic = "Comic" in output_format
             prompt = f"""
             System: You are a professional tutor. Language: {language}.
             Student: {student_name}, Age: {age}, Level: {level}, Style: {style}.
@@ -138,43 +119,38 @@ if st.button("ابدأ التعلم الآن 🚀"):
                Explanation: [Brief note]
             """
             
-            with st.spinner('جاري تحضير درسك التفاعلي...'):
+            with st.spinner('جاري تحضير درسك الممتع...'):
                 response = model.generate_content(prompt)
-                
                 if not response.text:
-                    raise Exception("استجابة فارغة من الذكاء الاصطناعي")
-                    
+                    raise Exception("لم يتم استلام نص من الذكاء الاصطناعي.")
+
                 st.session_state.lesson_data = response.text
                 st.session_state.score = 0
                 st.session_state.quiz_results = {}
                 
-                # إنشاء ملف الصوت بشكل آمن
+                # إنشاء الصوت
                 try:
-                    # تنظيف النص من أكواد الميك لتوليد صوت نقي
                     audio_text = clean_text_for_audio(st.session_state.lesson_data.split("Q:")[0])
-                    lang_code = {"العربية": "ar", "English": "en", "Français": "fr", "Deutsch": "de"}[language]
-                    tts = gTTS(text=audio_text[:600], lang=lang_code)
+                    lang_code_map = {"العربية": "ar", "English": "en", "Français": "fr", "Deutsch": "de"}
+                    tts = gTTS(text=audio_text[:600], lang=lang_code_map[language])
                     tts.save("voice.mp3")
-                except Exception:
-                    st.warning("تم توليد الدرس، ولكن حدث خطأ في إنشاء الملف الصوتي.")
+                except:
+                    pass
 
                 st.rerun()
                 
         except Exception as e: 
             st.error(f"حدث خطأ: {e}")
-            st.info("تأكد من أنك قمت بإضافة GEMINI_API_KEY في إعدادات Secrets على Streamlit Cloud.")
 
-# --- Display Area ---
+# --- 9. منطقة العرض (Display Area) ---
 if st.session_state.lesson_data:
     raw_content = st.session_state.lesson_data
     dir_css = "rtl" if language == "العربية" else "ltr"
     
-    # عرض مشغل الصوت إذا كان متاحاً
     if os.path.exists("voice.mp3"):
         st.audio("voice.mp3")
 
     if "Comic" in output_format:
-        # تقسيم المحتوى بناءً على اللوحات
         panels = re.split(r'PANEL \d+', raw_content.split("Q:")[0])[1:]
         cols = st.columns(2)
         for i, p in enumerate(panels[:4]):
@@ -186,29 +162,25 @@ if st.session_state.lesson_data:
                 
                 if cap: st.markdown(f'<div class="caption-tag">🎬 {cap.group(1).strip()}</div>', unsafe_allow_html=True)
                 if vis: 
-                    # استخدام نموذج Flux لصور الكوميكس
                     vis_query = vis.group(1).strip().replace(' ', '%20')
                     st.image(f"https://pollinations.ai/p/comic%20style%20{vis_query}?width=600&height=400&seed={i}&model=flux")
                 if dia: st.markdown(f'<div class="dialogue-text">💬 {dia.group(1).strip()}</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
     else:
-        # عرض فيديو يوتيوب تعليمي
         v_url = get_youtube_video(topic, language)
         if v_url: 
             st.markdown(f'<iframe width="100%" height="500" src="{v_url}" frameborder="0" allowfullscreen style="border-radius:15px; margin-bottom:20px;"></iframe>', unsafe_allow_html=True)
         
         body = raw_content.split("Q:")[0]
-        # استخراج الصور التوضيحية
         img_match = re.search(r'\[\[(.*?)\]\]', body)
         if img_match: 
             img_query = img_match.group(1).replace(' ', '%20')
             st.image(f"https://pollinations.ai/p/{img_query}?width=1024&height=500&model=flux")
         
-        # تنسيق نص الدرس
         clean_body = re.sub(r"\[\[.*?\]\]", "", body).replace("###", "📌").replace("\n","<br>")
         st.markdown(f'<div class="lesson-box" style="direction:{dir_css}">{clean_body}</div>', unsafe_allow_html=True)
 
-    # --- Interactive Quiz Section ---
+    # --- 10. اختبار المعلومات (Quiz) ---
     st.divider()
     st.header("🧠 اختبر معلوماتك")
     q_blocks = re.findall(r"Q:(.*?)Correct:(.*?)Explanation:(.*?)(?=Q:|$)", raw_content, re.DOTALL)
@@ -221,29 +193,23 @@ if st.session_state.lesson_data:
             st.write(f"**سؤال {i+1}:** {q_text}")
             
             options = re.findall(r"([A-C]\) .*?)(?=[A-C]\)|Correct:|$)", q_raw, re.DOTALL)
-            
             if options:
-                user_choice = st.radio(f"اختر الإجابة الصحيحة لـ س{i+1}:", options, key=f"radio_{i}", index=None)
+                user_choice = st.radio(f"اختر الإجابة لـ س{i+1}:", options, key=f"radio_{i}", index=None)
                 
-                if st.button(f"تحقق من الإجابة ✔️", key=f"btn_{i}"):
+                if st.button(f"تحقق ✔️", key=f"btn_{i}"):
                     if user_choice:
                         is_correct = user_choice[0] == correct.strip()
                         st.session_state.quiz_results[qid] = {"correct": is_correct, "expl": expl, "ans": correct.strip()}
                         if is_correct: st.session_state.score += 10
                         st.rerun()
-                    else:
-                        st.warning("الرجاء اختيار إجابة أولاً.")
                 
                 if qid in st.session_state.quiz_results:
                     res = st.session_state.quiz_results[qid]
                     if res["correct"]:
-                        st.markdown(f'<div class="correct-feedback">✅ رائع يا {student_name}! إجابة صحيحة. <br> {res["expl"]}</div>', unsafe_allow_html=True)
+                        st.markdown(f'<div class="correct-feedback">✅ أحسنت! إجابة صحيحة. <br> {res["expl"]}</div>', unsafe_allow_html=True)
                     else:
-                        st.markdown(f'<div class="wrong-feedback">❌ محاولة جيدة، لكن الإجابة الصحيحة هي {res["ans"]}. <br> {res["expl"]}</div>', unsafe_allow_html=True)
-            
+                        st.markdown(f'<div class="wrong-feedback">❌ الإجابة هي {res["ans"]}. <br> {res["expl"]}</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.score >= 40: 
         st.balloons()
-        st.success(f"تهانينا {student_name}! لقد أتممت الدرس بنجاح وبدرجة كاملة! 🏆")
-
