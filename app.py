@@ -75,7 +75,25 @@ if st.button("Start Learning 🚀"):
         st.error("Please enter a topic first!")
     else:
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            # --- منطق ذكي لاختيار الموديل المتاح وتجنب خطأ 404 ---
+            model = None
+            available_models = ["gemini-1.5-flash", "models/gemini-1.5-flash", "gemini-pro"]
+            
+            for model_name in available_models:
+                try:
+                    test_model = genai.GenerativeModel(model_name)
+                    # محاولة توليد محتوى بسيط جداً للتأكد من أن الموديل يعمل
+                    test_model.generate_content("Hi", generation_config={"max_output_tokens": 1})
+                    model = test_model
+                    break # إذا نجح، اخرج من الحلقة
+                except Exception:
+                    continue
+            
+            if model is None:
+                st.error("Could not connect to any Gemini models. Please check your API key and permissions.")
+                st.stop()
+
+            # --- إكمال معالجة المحتوى ---
             is_comic = "Comic" in output_format
             prompt = f"""
             System: You are a professional tutor. Language: {language}.
@@ -93,18 +111,31 @@ if st.button("Start Learning 🚀"):
                Correct: [Letter]
                Explanation: [Brief note]
             """
+            
             with st.spinner('Preparing your interactive lesson...'):
                 response = model.generate_content(prompt)
+                
+                if not response.text:
+                    throw(Exception("Empty response from AI"))
+                    
                 st.session_state.lesson_data = response.text
                 st.session_state.score = 0
                 st.session_state.quiz_results = {}
                 
-                audio_text = clean_text_for_audio(st.session_state.lesson_data.split("Q:")[0])
-                lang_code = {"العربية": "ar", "English": "en", "Français": "fr", "Deutsch": "de"}[language]
-                gTTS(text=audio_text[:600], lang=lang_code).save("voice.mp3")
-                st.rerun()
-        except Exception as e: st.error(f"Error: {e}")
+                # إنشاء ملف الصوت
+                try:
+                    audio_text = clean_text_for_audio(st.session_state.lesson_data.split("Q:")[0])
+                    lang_code = {"العربية": "ar", "English": "en", "Français": "fr", "Deutsch": "de"}[language]
+                    tts = gTTS(text=audio_text[:600], lang=lang_code)
+                    tts.save("voice.mp3")
+                except Exception as audio_err:
+                    st.warning("Lesson generated, but audio could not be created.")
 
+                st.rerun()
+                
+        except Exception as e: 
+            st.error(f"Error: {e}")
+            st.info("Tip: If you see a 404 error, try updating your 'google-generativeai' version in requirements.txt to 0.8.3")
 # --- Display Area ---
 if st.session_state.lesson_data:
     raw_content = st.session_state.lesson_data
@@ -166,5 +197,6 @@ if st.session_state.lesson_data:
             st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.score >= 40: st.balloons()
+
 
 
