@@ -6,15 +6,39 @@ import urllib.request
 import urllib.parse
 import os
 
-# --- API Config ---
+# --- 1. إعداد الـ API والتأكد من الاتصال ---
 if "GEMINI_API_KEY" in st.secrets:
     MY_API_KEY = st.secrets["GEMINI_API_KEY"]
+    # إعداد المكتبة بالمفتاح
+    genai.configure(api_key=MY_API_KEY)
 else:
-    st.error("خطأ: مفتاح API غير موجود. يرجى إضافته في إعدادات Secrets في Streamlit Cloud باسم GEMINI_API_KEY.")
+    st.error("❌ مفتاح API غير موجود في إعدادات Secrets!")
+    st.info("تأكد من إضافة GEMINI_API_KEY داخل مربع Secrets في Streamlit Cloud.")
     st.stop()
 
-genai.configure(api_key=MY_API_KEY)
+# --- 2. فحص صلاحية المفتاح والموديلات المتاحة (Diagnostics) ---
+@st.cache_resource
+def check_api_connection():
+    try:
+        # محاولة سرد الموديلات المتاحة لهذا المفتاح
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        return True, available_models
+    except Exception as e:
+        return False, str(e)
+
+connection_status, result = check_api_connection()
+
+if not connection_status:
+    st.error("🛑 فشل الاتصال بـ Google AI:")
+    st.warning(f"السبب التقني: {result}")
+    st.info("💡 نصيحة: إذا كان الخطأ 'API key not valid'، تأكد من نسخ المفتاح الجديد من AI Studio ووضعه بين علامتي تنصيص في Secrets.")
+    st.stop()
+
+# --- 3. إعدادات الصفحة ---
 st.set_page_config(page_title="Flexy AI Tutor", layout="wide", page_icon="🎓")
+
+# عرض رسالة نجاح مخفية في الشريط الجانبي للتأكد
+st.sidebar.success("✅ متصل بـ Gemini")"🎓")
 
 # --- UI Styling ---
 st.markdown("""
@@ -222,3 +246,4 @@ if st.session_state.lesson_data:
     if st.session_state.score >= 40: 
         st.balloons()
         st.success(f"تهانينا {student_name}! لقد أتممت الدرس بنجاح وبدرجة كاملة! 🏆")
+
