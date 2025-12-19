@@ -8,26 +8,25 @@ import time
 # --- 1. الإعدادات ---
 st.set_page_config(page_title="Flexi Academy AI", layout="wide")
 
+# تأكد من أن مفتاح الـ API موجود قبل البدء
 if "GEMINI_API_KEY" in st.secrets:
-    # نقوم فقط بضبط الإعدادات هنا
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("❌ قم بإضافة الـ API Key في الـ Secrets!")
+    st.error("❌ قم بإضافة الـ API Key في الـ Secrets باسم GEMINI_API_KEY")
     st.stop()
-
 
 # --- 2. تهيئة الجلسة ---
 if 'content' not in st.session_state: st.session_state.content = ""
 if 'quiz' not in st.session_state: st.session_state.quiz = []
 if 'score' not in st.session_state: st.session_state.score = 0
 if 'answers' not in st.session_state: st.session_state.answers = {}
+if 'content_mode' not in st.session_state: st.session_state.content_mode = ""
 
 # --- 3. الواجهة الجانبية ---
 with st.sidebar:
     st.image("https://flexiacademy.com/assets/images/flexi-logo-2021.png", width=180)
     st.header("👤 Profile & Settings")
     
-    # --- إضافة جديدة: اختيار نوع المحتوى ---
     st_mode = st.radio(
         "Choose Content Mode 📖:",
         ["Interactive Lesson (درس تفاعلي)", "Comic Story (قصة مصورة)"],
@@ -44,6 +43,8 @@ with st.sidebar:
     st.divider()
     if st.button("🔄 Reset App"):
         st.session_state.clear()
+        if os.path.exists("voice.mp3"):
+            os.remove("voice.mp3")
         st.rerun()
 
 # --- 4. منطق التوليد ---
@@ -55,93 +56,69 @@ if st.button("Generate Content 🚀"):
         st.warning("Please enter a topic.")
     else:
         try:
-            # حفظ النمط المختار لاستخدامه في العرض
             st.session_state.content_mode = st_mode
             
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            # --- الحل النهائي لخطأ 404 ---
+            # تعريف الموديل داخل زر الضغط لضمان تحميل الإعدادات أولاً
+            model = genai.GenerativeModel(
+                model_name="models/gemini-1.5-flash"
+            )
             
-            # --- تصميم الأوامر بناءً على النمط المختار ---
             base_prompt = f"""
-            Target Audience: Student Name: {st_name}, Age: {st_age}, Level: {st_level}, Language: {st_lang}, Style: {st_style}.
+            Target Audience: Name: {st_name}, Age: {st_age}, Level: {st_level}, Language: {st_lang}, Style: {st_style}.
             Topic: {topic}.
-            Requirements: Use exactly 6 [[detailed image prompt]] tags suitable for an image generator.
-            End the response with the separator '---QUIZ---' followed by 5 multiple choice questions in this format:
-            Q: Question text | A: Option1 | B: Option2 | C: Option3 | Correct: A/B/C | Expl: Short explanation
+            Requirements: Use 6 [[detailed image prompt]] tags.
+            End the response with '---QUIZ---' and 5 MCQs in this format:
+            Q: Question | A: Option1 | B: Option2 | C: Option3 | Correct: A/B/C | Expl: Explanation
             """
 
             if st_mode == "Interactive Lesson (درس تفاعلي)":
-                # برومبت الدرس الأكاديمي
-                specific_instructions = """
-                Role: Expert Tutor.
-                Task: Create a clear, structured academic lesson structured in 4 distinct sections. Explain key concepts clearly.
-                If style is Kinesthetic, include a small practical activity suggestion.
-                """
+                specific_instructions = "Role: Expert Tutor. Create a structured academic lesson."
             else:
-                # برومبت القصة المصورة
-                specific_instructions = """
-                Role: Creative Comic Book Writer.
-                Task: Create a thrilling educational comic story script structured into 6 Panels.
-                Format each panel as: 
-                **PANEL X**
-                (Narrator box text or character dialogue here)
-                [[detailed visual description of the action in this panel]]
-                Focus on action, dialogue, and a narrative arc that teaches the topic.
-                """
+                specific_instructions = "Role: Comic Writer. Create a script with 6 Panels. Format: **PANEL X** [[image prompt]]"
 
-            final_prompt = base_prompt + specific_instructions
-            
             with st.spinner(f'Flexi is creating your {st_mode}...'):
-                response = model.generate_content(final_prompt)
+                response = model.generate_content(base_prompt + specific_instructions)
+                full_response = response.text
                 
-                if "---QUIZ---" in response.text:
-                    lesson, quiz = response.text.split("---QUIZ---")
+                if "---QUIZ---" in full_response:
+                    lesson, quiz_raw = full_response.split("---QUIZ---")
                 else:
-                    lesson, quiz = response.text, ""
+                    lesson, quiz_raw = full_response, ""
                 
                 st.session_state.content = lesson
-                st.session_state.quiz = re.findall(r"Q:(.*?) \| A:(.*?) \| B:(.*?) \| C:(.*?) \| Correct:(.*?) \| Expl:(.*)", quiz)
+                # Regex مطور لتجنب أي أخطاء في التنسيق
+                st.session_state.quiz = re.findall(r"Q:\s*(.*?)\s*\|\s*A:\s*(.*?)\s*\|\s*B:\s*(.*?)\s*\|\s*C:\s*(.*?)\s*\|\s*Correct:\s*(.*?)\s*\|\s*Expl:\s*(.*)", quiz_raw)
                 st.session_state.score = 0
                 st.session_state.answers = {}
                 
                 # الصوت
                 try:
                     clean = re.sub(r'\[\[.*?\]\]', '', lesson[:700])
-                    # تنظيف إضافي للقصة المصورة لإزالة عناوين اللوحات من الصوت
-                    clean = re.sub(r'\*\*PANEL \d+\*\*', '', clean) 
-                    gTTS(text=clean, lang='en' if st_lang=="English" else 'ar').save("voice.mp3")
-                except: pass
+                    tts = gTTS(text=clean, lang='en' if st_lang=="English" else 'ar')
+                    tts.save("voice.mp3")
+                except:
+                    pass
                 
                 st.rerun()
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"حدث خطأ أثناء الاتصال بـ Gemini: {e}")
 
 # --- 5. عرض النتائج ---
 if st.session_state.content:
     if os.path.exists("voice.mp3"):
-        st.write("🎧 **Listen:**")
         st.audio("voice.mp3")
     
     direction = "rtl" if st_lang == "العربية" else "ltr"
-    st.markdown(f'<div style="direction:{direction}">', unsafe_allow_html=True)
+    st.markdown(f'<div dir="{direction}" style="text-align: {"right" if st_lang=="العربية" else "left"}">', unsafe_allow_html=True)
     
-    # تغيير عنوان القسم بناءً على النمط
-    if "Comic" in st.session_state.content_mode:
-        st.subheader("🖼️ Your Comic Story Adventure")
-    else:
-        st.subheader("📘 Your Interactive Lesson")
-
     parts = re.split(r'\[\[(.*?)\]\]', st.session_state.content)
     for i, p in enumerate(parts):
         if i % 2 == 0:
-            if p.strip(): 
-                # تنسيق مختلف قليلاً للقصة (خط أكبر للحوار)
-                if "Comic" in st.session_state.content_mode:
-                     st.markdown(f'<div style="background:#fdf2e9; padding:20px; border-radius:15px; border-left:5px solid #d97706; margin:15px 0; color:#333; font-size:1.1em; font-family:Comic Sans MS, cursive;">{p.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
-                else:
-                    # تنسيق الدرس العادي
-                    st.markdown(f'<div style="background:white; padding:20px; border-radius:10px; border-left:5px solid #1e3a8a; margin:10px 0; color:#333; line-height:1.6;">{p.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
+            if p.strip():
+                st.markdown(f'<div style="background:white; padding:15px; border-radius:10px; border-left:5px solid #1e3a8a; margin:10px 0; color:black;">{p.strip().replace("\n", "<br>")}</div>', unsafe_allow_html=True)
         else:
-            # الصور
+            # عرض الصور باستخدام محرك Pollinations
             st.image(f"https://pollinations.ai/p/{p.strip().replace(' ', '%20')}?width=800&height=400&seed={i}")
     
     # الكويز
@@ -152,15 +129,17 @@ if st.session_state.content:
             qid = f"q_{idx}"
             st.write(f"**Q{idx+1}:** {q.strip()}")
             choice = st.radio("Choose:", [f"A: {a}", f"B: {b}", f"C: {c}"], key=f"r_{idx}")
-            if st.button(f"Submit Q{idx+1}", key=f"b_{idx}"):
+            if st.button(f"Submit Q{idx+1}", key=f"btn_{idx}"):
                 if qid not in st.session_state.answers:
-                    is_correct = choice[0].upper() == correct.strip()[0].upper()
+                    # التحقق من الإجابة (تجاهل المسافات وحالة الأحرف)
+                    is_correct = choice.strip().startswith(correct.strip().upper())
                     st.session_state.answers[qid] = {"res": is_correct, "expl": expl, "c": correct}
                     if is_correct: st.session_state.score += 20
                     st.rerun()
+            
             if qid in st.session_state.answers:
                 ans = st.session_state.answers[qid]
                 if ans["res"]: st.success("Correct! 🌟")
                 else: st.error(f"Wrong. Answer is {ans['c']}. {ans['expl']}")
 
-
+    st.markdown('</div>', unsafe_allow_html=True)
